@@ -1,70 +1,44 @@
 #include "agfx.h"
 
-void agfx_init(agfx_surface_t* surface, void* buffer, int width, int height, int pitch) {
+void agfx_init(agfx_surface_t* surface, uint32_t* buffer, int width, int height, int pitch) {
     if (!surface) return;
-    surface->buffer = (uint32_t*)buffer;
+    surface->buffer = buffer;
     surface->width = width;
     surface->height = height;
     surface->pitch = pitch;
-	surface->clip_x = 0;
-    surface->clip_y = 0;
-    surface->clip_w = width;
-    surface->clip_h = height;
+    agfx_set_clip(surface, 0, 0, width, height);
 }
 
 void agfx_set_clip(agfx_surface_t* surface, int x, int y, int w, int h) {
     if (!surface) return;
-    
-    if (x < 0) { w += x; x = 0; }
-    if (y < 0) { h += y; y = 0; }
-    if (x + w > surface->width) w = surface->width - x;
-    if (y + h > surface->height) h = surface->height - y;
-    if (w < 0) w = 0;
-    if (h < 0) h = 0;
-    
-    surface->clip_x = x;
-    surface->clip_y = y;
-    surface->clip_w = w;
-    surface->clip_h = h;
+    agfx_surface_t screen_bounds = { .clip_x = 0, .clip_y = 0, .clip_w = surface->width, .clip_h = surface->height };
+    if (agfx_clip_rect(&screen_bounds, &x, &y, &w, &h)) {
+        surface->clip_x = x; surface->clip_y = y;
+        surface->clip_w = w; surface->clip_h = h;
+    } else {
+        surface->clip_w = 0; surface->clip_h = 0;
+    }
 }
 
 void agfx_draw_pixel(agfx_surface_t* surface, int x, int y, uint32_t color) {
     if (!surface || !surface->buffer) return;
-    if (x < surface->clip_x || x >= surface->clip_x + surface->clip_w || 
-        y < surface->clip_y || y >= surface->clip_y + surface->clip_h) {
-        return;
+    if (x >= surface->clip_x && x < surface->clip_x + surface->clip_w && 
+        y >= surface->clip_y && y < surface->clip_y + surface->clip_h) {
+        agfx_plot_fast(surface, x, y, color);
     }
-    
-    uint32_t* pixel = surface->buffer + (y * (surface->pitch / 4)) + x;
-    
-    *pixel = agfx_blend(*pixel, color);
 }
 
 void agfx_fill_rect(agfx_surface_t* surface, int x, int y, int w, int h, uint32_t color) {
-    if (!surface || !surface->buffer) return;
-
-    if (x < surface->clip_x) { w -= (surface->clip_x - x); x = surface->clip_x; }
-    if (y < surface->clip_y) { h -= (surface->clip_y - y); y = surface->clip_y; }
-    if (x + w > surface->clip_x + surface->clip_w) w = (surface->clip_x + surface->clip_w) - x;
-    if (y + h > surface->clip_y + surface->clip_h) h = (surface->clip_y + surface->clip_h) - y;
-    if (w <= 0 || h <= 0) return;
+    if (!surface || !surface->buffer || !agfx_clip_rect(surface, &x, &y, &w, &h)) return;
 
     int pitch_pixels = surface->pitch / 4;
     uint8_t alpha = (color >> 24) & 0xFF;
+    if (alpha == 0) return;
 
-    if (alpha == 255) {
-        for (int cy = y; cy < y + h; cy++) {
-            uint32_t* row = surface->buffer + (cy * pitch_pixels);
-            for (int cx = x; cx < x + w; cx++) {
-                row[cx] = color;
-            }
-        }
-    } else if (alpha > 0) {
-        for (int cy = y; cy < y + h; cy++) {
-            uint32_t* row = surface->buffer + (cy * pitch_pixels);
-            for (int cx = x; cx < x + w; cx++) {
-                row[cx] = agfx_blend(row[cx], color);
-            }
+    for (int cy = y; cy < y + h; cy++) {
+        uint32_t* row = surface->buffer + (cy * pitch_pixels);
+        for (int cx = x; cx < x + w; cx++) {
+            row[cx] = (alpha == 255) ? color : agfx_blend(row[cx], color);
         }
     }
 }
@@ -92,10 +66,11 @@ void agfx_draw_line(agfx_surface_t* surface, int x0, int y0, int x1, int y1, int
     int min_y = (y0 < y1 ? y0 : y1) - pad;
     int max_y = (y0 > y1 ? y0 : y1) + pad;
 
-    if (min_x < surface->clip_x) min_x = surface->clip_x;
-    if (max_x >= surface->clip_x + surface->clip_w) max_x = surface->clip_x + surface->clip_w - 1;
-    if (min_y < surface->clip_y) min_y = surface->clip_y;
-    if (max_y >= surface->clip_y + surface->clip_h) max_y = surface->clip_y + surface->clip_h - 1;
+    int bw = max_x - min_x + 1;
+    int bh = max_y - min_y + 1;
+    if (!agfx_clip_rect(surface, &min_x, &min_y, &bw, &bh)) return;
+    max_x = min_x + bw - 1;
+    max_y = min_y + bh - 1;
 
     int64_t l2 = (x1 - x0)*(x1 - x0) + (y1 - y0)*(y1 - y0);
     int64_t r_sq = (thickness * thickness) / 4;
@@ -156,34 +131,25 @@ void agfx_draw_circle(agfx_surface_t* surface, int xc, int yc, int r, uint32_t c
 
 void agfx_fill_alpha_mask(agfx_surface_t* surface, int x, int y, int w, int h, const uint8_t* mask, uint32_t color) {
     if (!surface || !surface->buffer || !mask) return;
+    
+    int orig_x = x, orig_y = y;
+    if (!agfx_clip_rect(surface, &x, &y, &w, &h)) return;
 
-    if (x >= surface->width || y >= surface->height || x + w <= 0 || y + h <= 0) return;
-
-    uint8_t text_r = (color >> 16) & 0xFF;
-    uint8_t text_g = (color >> 8) & 0xFF;
-    uint8_t text_b = color & 0xFF;
-    uint8_t text_a = (color >> 24) & 0xFF; 
-
+    uint8_t text_r = (color >> 16) & 0xFF, text_g = (color >> 8) & 0xFF, text_b = color & 0xFF, text_a = (color >> 24) & 0xFF; 
     int pitch_pixels = surface->pitch / 4;
 
     for (int cy = 0; cy < h; cy++) {
-        int screen_y = y + cy;
-        if (screen_y < 0 || screen_y >= surface->height) continue;
-
-        uint32_t* row = surface->buffer + (screen_y * pitch_pixels);
+        uint32_t* row = surface->buffer + ((y + cy) * pitch_pixels);
+        int mask_y = (y + cy) - orig_y;
         
         for (int cx = 0; cx < w; cx++) {
-            int screen_x = x + cx;
-            if (screen_x < 0 || screen_x >= surface->width) continue;
-
-            uint8_t mask_val = mask[cy * w + cx];
+            int mask_x = (x + cx) - orig_x;
+            uint8_t mask_val = mask[mask_y * w + mask_x];
             if (mask_val == 0) continue;
 
             uint8_t final_alpha = (mask_val * text_a) / 255;
-
             uint32_t src_color = (final_alpha << 24) | (text_r << 16) | (text_g << 8) | text_b;
-
-            row[screen_x] = agfx_blend(row[screen_x], src_color);
+            row[x + cx] = agfx_blend(row[x + cx], src_color);
         }
     }
 }
@@ -210,35 +176,38 @@ void agfx_fill_circle(agfx_surface_t* surface, int xc, int yc, int r, uint32_t c
     }
 }
 
-void agfx_blit(agfx_surface_t* dest, int x, int y, agfx_surface_t* src) {
-    if (!dest || !dest->buffer || !src || !src->buffer) return;
+void agfx_blit(agfx_surface_t* dest, int x, int y, int dest_w, int dest_h, const agfx_surface_t* src) {
+    if (!dest || !dest->buffer || !src || !src->buffer || dest_w <= 0 || dest_h <= 0) return;
 
-    int draw_start_x = (x < 0) ? -x : 0;
-    int draw_start_y = (y < 0) ? -y : 0;
-    int draw_end_x = (x + src->width > dest->width) ? dest->width - x : src->width;
-    int draw_end_y = (y + src->height > dest->height) ? dest->height - y : src->height;
+    uint32_t dx = (src->width << 16) / dest_w;
+    uint32_t dy = (src->height << 16) / dest_h;
+
+    int orig_x = x, orig_y = y;
+    int w = dest_w, h = dest_h;
+    if (!agfx_clip_rect(dest, &x, &y, &w, &h)) return;
 
     int dest_pitch = dest->pitch / 4;
     int src_pitch = src->pitch / 4;
 
-    for (int cy = draw_start_y; cy < draw_end_y; cy++) {
-        uint32_t* dest_row = dest->buffer + ((y + cy) * dest_pitch) + x;
-        uint32_t* src_row = src->buffer + (cy * src_pitch);
+    for (int cy = 0; cy < h; cy++) {
+        int screen_y = y + cy;
+        int src_y = ((screen_y - orig_y) * dy) >> 16;
+        
+        uint32_t* dest_row = dest->buffer + (screen_y * dest_pitch);
+        uint32_t* src_row = src->buffer + (src_y * src_pitch);
 
-        for (int cx = draw_start_x; cx < draw_end_x; cx++) {
-            uint32_t fg = src_row[cx];
+        for (int cx = 0; cx < w; cx++) {
+            int screen_x = x + cx;
+            int src_x = ((screen_x - orig_x) * dx) >> 16;
+
+            uint32_t fg = src_row[src_x];
             uint8_t alpha = (fg >> 24) & 0xFF;
-            
-            if (alpha == 255) {
-                dest_row[cx] = fg;
-            } else if (alpha > 0) {
-                dest_row[cx] = agfx_blend(dest_row[cx], fg);
-            }
+
+            if (alpha == 255) dest_row[screen_x] = fg;
+            else if (alpha > 0) dest_row[screen_x] = agfx_blend(dest_row[screen_x], fg);
         }
     }
 }
-
-#define AGFX_SWAP(a, b, type) do { type temp = a; a = b; b = temp; } while(0)
 
 void agfx_draw_triangle(agfx_surface_t* surface, int x0, int y0, int x1, int y1, int x2, int y2, int thickness, uint32_t color) {
     agfx_draw_line(surface, x0, y0, x1, y1, thickness, color);
@@ -312,42 +281,7 @@ void agfx_fill_rect_rounded(agfx_surface_t* surface, int x, int y, int w, int h,
     agfx_fill_rect(surface, x, y + r, w, h - 2*r, color);
 }
 
-void agfx_blit_scaled(agfx_surface_t* dest, int x, int y, int dest_w, int dest_h, agfx_surface_t* src) {
-    if (!dest || !dest->buffer || !src || !src->buffer || dest_w <= 0 || dest_h <= 0) return;
-
-    uint32_t dx = (src->width << 16) / dest_w;
-    uint32_t dy = (src->height << 16) / dest_h;
-
-    int dest_pitch = dest->pitch / 4;
-    int src_pitch = src->pitch / 4;
-
-    for (int cy = 0; cy < dest_h; cy++) {
-        int screen_y = y + cy;
-        if (screen_y < 0 || screen_y >= dest->height) continue;
-
-        int src_y = (cy * dy) >> 16;
-        uint32_t* dest_row = dest->buffer + (screen_y * dest_pitch);
-        uint32_t* src_row = src->buffer + (src_y * src_pitch);
-
-        for (int cx = 0; cx < dest_w; cx++) {
-            int screen_x = x + cx;
-            if (screen_x < 0 || screen_x >= dest->width) continue;
-
-            int src_x = (cx * dx) >> 16;
-
-            uint32_t fg = src_row[src_x];
-            uint8_t alpha = (fg >> 24) & 0xFF;
-
-            if (alpha == 255) {
-                dest_row[screen_x] = fg;
-            } else if (alpha > 0) {
-                dest_row[screen_x] = agfx_blend(dest_row[screen_x], fg);
-            }
-        }
-    }
-}
-
-void agfx_draw_polygon(agfx_surface_t* surface, agfx_point_t* points, int count, int thickness, uint32_t color) {
+void agfx_draw_polygon(agfx_surface_t* surface, const agfx_point_t* points, int count, int thickness, uint32_t color) {
     if (!surface || !points || count < 3 || thickness <= 0) return;
 
     for (int i = 0; i < count - 1; i++) {
@@ -420,7 +354,7 @@ void agfx_draw_rect_rounded(agfx_surface_t* surface, int x, int y, int w, int h,
     }
 }
 
-void agfx_fill_polygon(agfx_surface_t* surface, agfx_point_t* points, int count, uint32_t color) {
+void agfx_fill_polygon(agfx_surface_t* surface, const agfx_point_t* points, int count, uint32_t color) {
     if (!surface || !points || count < 3) return;
 
     for (int i = 1; i < count - 1; i++) {

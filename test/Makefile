@@ -1,8 +1,8 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -I..
+CFLAGS =  -g -O0 -fsanitize=address -Wall -Wextra -I..
 TARGET = test_agfx
 
-SRCS = main.c ../agfx.c ../agfx_ext.c
+SRCS = main.c ../agfx.c ../agfx_filters.c ../agfx_mask.c
 
 all: $(TARGET)
 
@@ -13,4 +13,4 @@ run: all
 	./$(TARGET)
 
 clean:
-	rm -f $(TARGET) output.bmp
+	rm -f $(TARGET) output*.bmp

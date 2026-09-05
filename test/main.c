@@ -2,12 +2,12 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include "../agfx.h"
-#include "../agfx_ext.h" // Не забываем подключить модуль расширений!
+#include "../agfx_filters.h"
+#include "../agfx_mask.h"
 
 #define WIDTH 800
 #define HEIGHT 600
 
-// Функция сохранения в BMP-файл
 void save_bmp(const char* filename, uint32_t* buffer, int width, int height) {
     FILE* f = fopen(filename, "wb");
     if (!f) { printf("Error opening file!\n"); return; }
@@ -38,7 +38,7 @@ void save_bmp(const char* filename, uint32_t* buffer, int width, int height) {
 }
 
 int main() {
-    printf("Starting AGFX Showcase...\n");
+    printf("Starting AGFX Showcase...\n1. Basic\n");
 
     int pitch = WIDTH * 4;
     uint32_t* framebuffer = (uint32_t*)calloc(WIDTH * HEIGHT, 4);
@@ -46,12 +46,8 @@ int main() {
     agfx_surface_t screen;
     agfx_init(&screen, framebuffer, WIDTH, HEIGHT, pitch);
 
-    // ==========================================
-    // ФОН И СЕТКА (Для теста прозрачности)
-    // ==========================================
-    agfx_fill_rect(&screen, 0, 0, WIDTH, HEIGHT, 0xFF1E1E2E); // Темно-серый фон
+    agfx_fill_rect(&screen, 0, 0, WIDTH, HEIGHT, 0xFF1E1E2E);
 
-    // Рисуем тонкую сетку
     for (int x = 0; x < WIDTH; x += 50) {
         agfx_draw_line(&screen, x, 0, x, HEIGHT, 1, 0xFF2A2A3B);
     }
@@ -59,82 +55,71 @@ int main() {
         agfx_draw_line(&screen, 0, y, WIDTH, y, 1, 0xFF2A2A3B);
     }
 
+    agfx_filter_gradient(&screen, 40, 40, 160, 160, 
+                         40, 40, 200, 200, 
+                         0xFF8A2387, 0xFFE94057);
 
-    // ==========================================
-    // ЗОНА 1: Прямоугольники (Верхний левый угол)
-    // ==========================================
-    // 1. Градиентный квадрат
-    agfx_fill_rect_gradient(&screen, 40, 40, 160, 160, 
-                            40, 40, 200, 200, 
-                            0xFF8A2387, 0xFFE94057); // Фиолетово-красный
+    uint8_t* mask_rect = (uint8_t*)calloc(200 * 120, 1);
+    agfx_mask_fill_rounded_rect(mask_rect, 200, 120, 0, 0, 200, 120, 25, 255);
+    agfx_filter_gradient_mask(&screen, 120, 100, 200, 120, mask_rect,
+                              120, 100, 320, 220,
+                              0xFFF2A65A, 0xFF7700FF);
+    free(mask_rect);
 
-    // 2. Полупрозрачный скругленный прямоугольник (накладывается поверх!)
-    agfx_fill_rect_rounded(&screen, 120, 100, 200, 120, 25, 0xBB000000); // Черный, прозрачность ~70%
+    uint8_t* mask_circle = (uint8_t*)calloc(160 * 160, 1);
+    agfx_mask_fill_circle(mask_circle, 160, 160, 80, 80, 80, 255);
+    agfx_filter_gradient_mask(&screen, 470, 50, 160, 160, mask_circle,
+                              470, 50, 470, 210,
+                              0xFF11998E, 0xFF38EF7D);
+    free(mask_circle);
 
-    // 3. Контурный скругленный прямоугольник (Толщина 3)
-    agfx_draw_rect_rounded(&screen, 120, 100, 200, 120, 25, 3, 0xFFF2A65A); // Оранжевый контур
+    uint8_t* mask_poly = (uint8_t*)calloc(200 * 200, 1);
+    agfx_point_t hex[6] = { {80, 0}, {160, 40}, {160, 130}, {80, 170}, {0, 130}, {0, 40} };
+    agfx_mask_fill_polygon_fan_op(mask_poly, 200, 200, hex, 6, 255, AGFX_MASK_OP_SET);
+    agfx_filter_gradient_mask(&screen, 70, 350, 200, 200, mask_poly,
+                              70, 350, 270, 550,
+                              0xFF00C9FF, 0xFF92FE9D);
+    free(mask_poly);
 
+    agfx_fill_triangle(&screen, 150, 420, 320, 550, 70, 580, 0x99FF92A5);
+    agfx_draw_circle(&screen, 550, 130, 90, 0x88FFFFFF);
+    agfx_draw_bezier(&screen, 450, 450, 600, 280, 750, 450, 5, 0xFF00FF87);
 
-    // ==========================================
-    // ЗОНА 2: Круги и Экзотика (Верхний правый угол)
-    // ==========================================
-    // 1. Градиентный круг (Из модуля agfx_ext)
-    agfx_fill_circle_gradient(&screen, 550, 130, 80, 
-                              550, 50, 550, 210, 
-                              0xFF11998E, 0xFF38EF7D); // Зеленый градиент сверху вниз
+    save_bmp("output_basic.bmp", framebuffer, WIDTH, HEIGHT);
+    printf("Saved to output_basic.bmp\n2. Filters\n");
+	
+    int fx = 90, fy = 70, fw = 300, fh = 200;
+    size_t scratch_n = agfx_filters_scratch_u32(fw, fh);
 
-    // 2. Сплошной полумесяц (Из модуля agfx_ext)
-    agfx_fill_crescent(&screen, 700, 120, 60,   // Основной круг
-                                720, 100, 55,   // Вырезающий круг
-                                0xFFF9F871);    // Желтый цвет
+    uint32_t* tmp1 = (uint32_t*)malloc(scratch_n * sizeof(uint32_t));
+    uint32_t* tmp2 = (uint32_t*)malloc(scratch_n * sizeof(uint32_t));
 
-    // 3. Контурный круг (поверх градиентного, для красоты)
-    agfx_draw_circle(&screen, 550, 130, 90, 0x88FFFFFF); // Белый полупрозрачный контур
+    if (tmp1 && tmp2) {
+        agfx_filter_glass(&screen, fx, fy, fw, fh, 8, 0x55FFFFFF, tmp1, tmp2);
 
+        agfx_draw_rect_rounded(&screen, fx, fy, fw, fh, 22, 2, 0x88FFFFFF);
 
-    // ==========================================
-    // ЗОНА 3: Многоугольники (Нижний левый угол)
-    // ==========================================
-    // 1. Залитый шестиугольник (Триангуляция веером)
-    agfx_point_t hex[6] = {
-        {150, 350}, {230, 390}, {230, 480}, 
-        {150, 520}, {70, 480}, {70, 390}
-    };
-    agfx_fill_polygon(&screen, hex, 6, 0xFF00C9FF); // Голубой
+        agfx_filter_grayscale(&screen, 40, 340, 220, 220);
+        agfx_draw_rect(&screen, 40, 340, 220, 220, 2, 0xAAFFFFFF);
 
-    // 2. Полупрозрачный треугольник (Пересекает шестиугольник)
-    agfx_fill_triangle(&screen, 150, 420, 320, 550, 70, 580, 0x99FF92A5); // Розовый с альфой
+        agfx_filter_invert(&screen, 270, 340, 120, 120);
+        agfx_draw_rect(&screen, 270, 340, 120, 120, 2, 0xAAFFFFFF);
+		
+		agfx_filter_acrylic(&screen, 400, 220, 200, 300,
+                            5,
+                            0x66222222,
+                            16,
+                            0xC0FFEEu,
+                            tmp1, tmp2);
+		
+		agfx_draw_rect(&screen, 400, 220, 200, 300, 1, 0x88FFFFFF);
+    }
 
-    // 3. Контурная звезда с толщиной 2 пикселя
-    agfx_point_t star[5] = {
-        {280, 370}, {310, 470}, {220, 410}, 
-        {340, 410}, {250, 470}
-    };
-    agfx_draw_polygon(&screen, star, 5, 2, 0xFFFFD700); // Золотой
+    free(tmp1);
+    free(tmp2);
 
-
-    // ==========================================
-    // ЗОНА 4: Линии и Кривые Безье (Нижний правый угол)
-    // ==========================================
-    // 1. Толстая градиентная линия (Толщина 10)
-    agfx_draw_line_gradient(&screen, 420, 500, 760, 400, 10,
-                            420, 500, 760, 400,
-                            0xFFFF512F, 0xFFDD2476); // Огненный градиент
-
-    // 2. Кривая Безье (Плавная дуга с толщиной 5)
-    // Старт (450, 450) -> Контрольная точка тянет вверх (600, 280) -> Финиш (750, 450)
-    agfx_draw_bezier(&screen, 450, 450, 600, 280, 750, 450, 5, 0xFF00FF87); // Неоновый зеленый
-
-    // 3. Тонкие "скелетные" линии для понимания контрольной точки Безье
-    agfx_draw_line(&screen, 450, 450, 600, 280, 1, 0x55FFFFFF);
-    agfx_draw_line(&screen, 600, 280, 750, 450, 1, 0x55FFFFFF);
-
-
-    // ==========================================
-    // СОХРАНЕНИЕ
-    // ==========================================
-    save_bmp("output.bmp", framebuffer, WIDTH, HEIGHT);
-    printf("Saved to output.bmp\n");
+    save_bmp("output_filters.bmp", framebuffer, WIDTH, HEIGHT);
+    printf("Saved to output_filters.bmp\n");
 
     free(framebuffer);
     return 0;
