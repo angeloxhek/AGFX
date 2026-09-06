@@ -1,133 +1,189 @@
-# AGFX — Advanced Graphics Library
+# AGFX — Advanced Graphics & UI Library
 
 [🇺🇸 English](#en--english) | [🇷🇺 Русский](#ru--русский)
 
 <div align="center">
   <img src="https://img.shields.io/badge/C-00599C?style=for-the-badge&logo=c&logoColor=white" />
   <img src="https://img.shields.io/badge/OSDev-000000?style=for-the-badge&logo=linux&logoColor=white" />
-  <img src="https://img.shields.io/badge/Software_Rendering-222222?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Freestanding-Success?style=for-the-badge" />
 </div>
 
 ---
 
 ## EN / English
 
-**AGFX** is a small, dependency-free **software 2D rendering library** designed for **OSDev** and other low-level projects.
+**AGFX** is a lightweight, completely **freestanding software 2D rendering engine and Immediate Mode GUI (IMGUI) framework** designed for **OSDev**, embedded systems, and bare-metal environments.
 
-It was built around a simple idea: *draw into a raw pixel buffer without needing a windowing system, GPU APIs, or a standard library.*
+It allows you to draw primitives, render TrueType fonts, apply modern visual effects (frosted glass, gradients, soft shadows), and build Windows 10-style user interfaces without relying on a windowing system, GPU APIs, or standard C runtime libraries (`libc`, `libm`, `stdbool.h`).
 
 ### Key Features
-- **Pure CPU rendering** (software rasterizer)
-- Works with a raw **32-bit framebuffer** (`uint32_t*`)
-- **No malloc required** (you provide buffers)
-- **Clipping rectangle** support (`clip_x/clip_y/clip_w/clip_h`)
-- **Alpha blending** (ARGB style, per-pixel alpha)
-- Common primitives & shapes:
-  - pixel / line (with thickness)
-  - Bezier curve (quadratic)
-  - rectangles (fill / outline / rounded)
-  - circles (fill / outline)
-  - triangles (fill / outline)
-  - polygons (outline + fan-based fill)
-- Optional “extras” module with **gradients** and non-core shapes
+
+- **100% Freestanding / No Libc:** Built-in minimal math and string routines. Custom memory allocators (`malloc`/`free`) can be injected via `agfx_set_allocators()`.
+- **Pure CPU Software Rasterizer:** Works directly with raw 32-bit ARGB framebuffers (`uint32_t*`).
+- **Core 2D Primitives:**
+  - Fast pixels, lines (with thickness), quadratic Bezier curves
+  - Rectangles (fill, outline, rounded corners)
+  - Circles, triangles, convex/concave polygons (fan fill)
+  - Blitting with scaling and alpha blending (`agfx_blit`)
+  - Strict clipping rectangle support (`clip_x/y/w/h`)
+- **Anti-Aliased Mask Engine (`agfx_mask`):**
+  - High-quality 8-bit alpha mask generation for complex shapes
+  - Boolean mask operations (`SET`, `MAX`, `ADD`, `SUB`)
+- **Shaders & Filters (`agfx_filters`):**
+  - Smooth linear gradients (standalone or masked onto any shape)
+  - Fast box blur
+  - Frosted Glass effect (blur + tint) and Acrylic effect
+  - Grayscale and color invert
+- **Freestanding Typography (`agfx_text`):**
+  - Vector TrueType (`.ttf`) font rendering powered by embedded `stb_truetype.h`
+  - Generates whole-string alpha masks (supports gradient/acrylic text)
+- **Windows 10 Style UI Toolkit (`agfx_ui`):**
+  - Immediate Mode GUI (IMGUI) paradigm
+  - Theming system: Built-in Dark and Light themes + customizable accent colors
+  - Auto-layout engine with `same_line` support
+  - Widgets: Buttons, Checkboxes, Radio buttons, Sliders, Progress bars, Textboxes with cursor, Labels, Separators
+  - Decoupled `behavior` pattern (`button_behavior`, `slider_behavior`) for infinite visual customization
+  - 1-line smooth drop shadows (`agfx_ui_draw_shadow`)
+
+---
 
 ### Repository Layout
-- **`agfx.h` / `agfx.c`** — core primitives (solid fills, blending, clip)
-- **`agfx_ext.h` / `agfx_ext.c`** — extended stuff (gradients, fancy shapes, etc.)
-- **`test/`** — linux/WSL test harness that renders to `output_*.bmp`
 
-### Quick Start (Linux / WSL)
+- **`agfx.h` / `agfx.c`** — Core 2D primitives, clipping, memory hooks, blitting
+- **`agfx_mask.h` / `agfx_mask.c`** — 8-bit alpha mask generation & boolean operations
+- **`agfx_filters.h` / `agfx_filters.c`** — Image filters, blur, glass, gradients
+- **`agfx_text.h` / `agfx_text.c`** — TTF font parsing & string mask generation
+- **`agfx_ui.h` / `agfx_ui.c`** — Windows 10 style IMGUI framework & theming
+- **`stb_truetype.h`** — Public domain / MIT TrueType rasterizer
+- **`test/`** — Linux test harness that generates showcase images (`output_*.bmp`)
+
+---
+
+### Quick Start (Linux / WSL Test)
+
+1. Ensure a TTF font (e.g. `selawk.ttf`) is placed in `test/`.
+2. Build and run the test harness:
 ```bash
 cd test
 make clean && make run
 ```
 
-The result image will be written into `test/` (e.g. `output_showcase.bmp`).
+Result images will be generated in `test/`:
+- `output_basic.bmp` — Primitives, curves, polygons
+- `output_filters.bmp` — Blur, grayscale, invert, glass
+- `output_text.bmp` — Solid, gradient, and frosted acrylic typography
+- `output_ui.bmp` — Full Windows 10 style compositing demo with overlapping frosted glass dialog
 
-### Usage Example
+---
+
+### Usage Example (Immediate Mode UI)
+
 ```c
 #include "agfx.h"
+#include "agfx_ui.h"
 
-agfx_surface_t s;
-agfx_init(&s, framebuffer, width, height, width * 4);
-agfx_set_clip(&s, 0, 0, width, height);
+// 1. Initialize surface and UI context
+agfx_surface_t screen;
+agfx_init(&screen, framebuffer, width, height, width * 4);
+agfx_set_allocators(my_malloc, my_free);
 
-agfx_fill_rect(&s, 0, 0, width, height, 0xFF112233);
-agfx_draw_line(&s, 10, 10, 300, 200, 3, 0xFFFFAA00);
-agfx_fill_circle(&s, 200, 150, 40, 0x8800FF00);
+agfx_ui_context_t ui;
+agfx_ui_init(&ui, &screen, &my_font);
+
+// 2. Set theme and feed input events from OS
+agfx_ui_theme_t theme = agfx_ui_theme_win10_dark();
+agfx_ui_set_theme(&ui, &theme);
+agfx_ui_set_input(&ui, mouse_x, mouse_y, mouse_down, mouse_clicked);
+
+// 3. Render widgets with automatic layout
+agfx_ui_begin(&ui, 20, 20);
+agfx_ui_label(&ui, "Settings");
+agfx_ui_separator(&ui, 300);
+
+if (agfx_ui_button(&ui, "Apply", 90, 28)) {
+    apply_settings();
+}
+agfx_ui_same_line(&ui);
+if (agfx_ui_button(&ui, "Cancel", 90, 28)) {
+    close_window();
+}
+
+static int dark_mode = 1;
+agfx_ui_checkbox(&ui, "Enable Dark Mode", &dark_mode);
 ```
-
-### Notes / Assumptions
-- Pixel format is expected to be **32-bit** (`uint32_t` per pixel).  
-- `pitch` is **bytes per row** (stride).  
-- Blending uses integer math (no floating point required).
-
-### Why?
-AGFX is primarily used as a graphics layer for my OSDev projects (especially **AOS**), but it’s kept generic so you can embed it anywhere you can access a framebuffer.
-
-### Related Projects
-- **[AOS](https://github.com/angeloxhek/AOS)** — my custom OS from scratch
-
-> *Love and kisses to everyone! I hope you enjoy my projects.* 🤍
 
 ---
 
 ## RU / Русский
 
-**AGFX** — маленькая, независимая от окружения **2D библиотека программного рендеринга**, сделанная с прицелом на **OSDev** и низкоуровневые проекты.
+**AGFX** — легковесный, полностью **независимый (freestanding) графический 2D-движок и библиотека интерфейса (Immediate Mode GUI)**, разработанный специально для **OSDev**, встраиваемых систем и bare-metal окружений.
 
-Идея простая: *рисовать напрямую в буфер пикселей, без окон, без GPU API, без тяжёлых зависимостей.*
+Библиотека позволяет рисовать примитивы, рендерить векторные TrueType шрифты, накладывать эффекты матового стекла, градиенты и строить пользовательские интерфейсы в стиле Windows 10 без использования стандартной библиотеки Си (`libc`, `libm`, `stdbool.h`) или графических API операционных систем.
 
-### Возможности
-- **CPU-only** рендеринг (software rasterizer)
-- Рисование в сырой **32-битный framebuffer** (`uint32_t*`)
-- **Без malloc** (буферы задаёшь сам)
-- Поддержка **области отсечения (clip rect)**
-- **Альфа-смешивание** (ARGB, прозрачность на пиксель)
-- Примитивы и фигуры:
-  - пиксель / линия (с толщиной)
-  - кривая Безье (квадратичная)
-  - прямоугольники (заливка / контур / скруглённые)
-  - окружности (заливка / контур)
-  - треугольники (заливка / контур)
-  - многоугольники (контур + заливка “веером”)
-- Отдельный модуль расширений: **градиенты** и нестандартные штуки
+### Основные возможности
+
+- **100% Freestanding (без libc):** Встроенные микро-версии математических и строковых функций. Кастомные аллокаторы памяти ядра или ОС передаются через `agfx_set_allocators()`.
+- **Программный CPU-рендеринг:** Прямой вывод в сырой 32-битный ARGB буфер (`uint32_t*`).
+- **Базовые 2D-примитивы:**
+  - Пиксели, линии с произвольной толщиной, квадратичные кривые Безье
+  - Прямоугольники (заливка, контур, скругленные углы)
+  - Окружности, треугольники, полигоны
+  - Копирование буферов с масштабированием и альфа-смешиванием (`agfx_blit`)
+  - Аппаратное/программное отсечение по границам (`agfx_clip_rect`)
+- **Генератор сглаженных масок (`agfx_mask`):**
+  - Генерация 8-битных альфа-масок для фигур со сглаживанием (Anti-Aliasing)
+  - Булевы операции над масками (`SET`, `MAX`, `ADD`, `SUB`)
+- **Фильтры и шейдеры (`agfx_filters`):**
+  - Линейные градиенты (заливка прямоугольников или любых фигур по маске)
+  - Быстрый блочный блюр (Box Blur)
+  - Эффект матового стекла (Glass / Acrylic Blur + Tint)
+  - Преобразование в оттенки серого (Grayscale) и инверсия цветов
+- **Рендеринг шрифтов (`agfx_text`):**
+  - Поддержка векторных шрифтов TrueType (`.ttf`) на базе встроенного `stb_truetype.h`
+  - Генерация единой альфа-маски для всей строки (позволяет заливать текст градиентом или размывать под ним фон)
+- **Фреймворк интерфейса в стиле Windows 10 (`agfx_ui`):**
+  - Архитектура Immediate Mode GUI (IMGUI)
+  - Система тем: готовые темная и светлая темы Windows 10 + кастомные акцентные цвета
+  - Автоматическая компоновка элементов с поддержкой `same_line`
+  - Виджеты: Кнопки, Чекбоксы, Радио-кнопки, Слайдеры, Прогресс-бары, Поля ввода текста с курсором, Текст, Разделители
+  - Паттерн `behavior` (`button_behavior`, `slider_behavior`) для создания абсолютно любых кастомных кнопок
+  - Мягкие тени окон в одну строчку (`agfx_ui_draw_shadow`)
+
+---
 
 ### Структура репозитория
-- **`agfx.h` / `agfx.c`** — ядро (solid-рендер, blending, clip)
-- **`agfx_ext.h` / `agfx_ext.c`** — расширения (градиенты, “лишние” фигуры и т.п.)
-- **`test/`** — тестовый стенд под Linux/WSL, вывод в `output_*.bmp`
 
-### Быстрый запуск (Linux / WSL)
+- **`agfx.h` / `agfx.c`** — Ядро, базовые примитивы, клиппинг, аллокаторы, блиттинг
+- **`agfx_mask.h` / `agfx_mask.c`** — Генерация 8-битных масок и булевы операции
+- **`agfx_filters.h` / `agfx_filters.c`** — Фильтры, блюр, матовое стекло, градиенты
+- **`agfx_text.h` / `agfx_text.c`** — Парсинг TTF и генерация масок текста
+- **`agfx_ui.h` / `agfx_ui.c`** — IMGUI-фреймворк, темы оформления и виджеты
+- **`stb_truetype.h`** — Встраиваемый TTF-растеризатор (Public Domain / MIT)
+- **`test/`** — Тестовый стенд под Linux с генерацией BMP-изображений
+
+---
+
+### Быстрый запуск тестов (Linux / WSL)
+
+1. Положи любой TTF-шрифт (например `selawk.ttf`) в папку `test/`.
+2. Запусти сборку:
 ```bash
 cd test
 make clean && make run
 ```
 
-Результат будет сохранён в `test/` (например `output_showcase.bmp`).
+В папке `test/` появятся 4 файла:
+- `output_basic.bmp` — Примитивы, Безье, полигоны
+- `output_filters.bmp` — Размытие, оттенки серого, инверсия
+- `output_text.bmp` — Сплошной, градиентный и стеклянный текст
+- `output_ui.bmp` — Композитинг окон с перекрытием, матовым стеклом и виджетами Windows 10
 
-### Пример использования
-```c
-#include "agfx.h"
+---
 
-agfx_surface_t s;
-agfx_init(&s, framebuffer, width, height, width * 4);
-agfx_set_clip(&s, 0, 0, width, height);
+### Лицензия и связанные проекты
 
-agfx_fill_rect(&s, 0, 0, width, height, 0xFF112233);
-agfx_draw_line(&s, 10, 10, 300, 200, 3, 0xFFFFAA00);
-agfx_fill_circle(&s, 200, 150, 40, 0x8800FF00);
-```
+- Библиотека распространяется под лицензией **MIT**.
+- Модуль растеризации шрифтов использует `stb_truetype.h` (Sean Barrett, Public Domain / MIT).
+- Основной проект-потребитель: **[AOS](https://github.com/angeloxhek/AOS)** — кастомная операционная система с нуля.
 
-### Примечания
-- Ожидается **32-bit** формат пикселя (`uint32_t` на пиксель)
-- `pitch` — это **байт на строку** (stride)
-- Вся математика — **целочисленная**, без `float`
-
-### Зачем?
-AGFX в первую очередь пишется как графический слой для моих OSDev проектов (особенно **AOS**), но остаётся максимально универсальной библиотекой для любых буферов пикселей.
-
-### Связанные проекты
-- **[AOS](https://github.com/angeloxhek/AOS)** — моя ОС с нуля
-
-> *Всех люблю, всех целую! Надеюсь, вам понравятся мои проекты.* 🤍
+> *Love and kisses to everyone! I hope you enjoy my projects.* 🤍

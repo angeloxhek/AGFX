@@ -86,8 +86,14 @@ static inline void agfx_plot_fast(agfx_surface_t* s, int x, int y, uint32_t colo
     else if (alpha > 0) *p = agfx_blend(*p, color);
 }
 
+typedef void* (*agfx_malloc_func_t)(size_t);
+typedef void  (*agfx_free_func_t)(void*);
+
 void agfx_init(agfx_surface_t* surface, uint32_t* buffer, int width, int height, int pitch);
 void agfx_set_clip(agfx_surface_t* surface, int x, int y, int w, int h);
+void agfx_set_allocators(agfx_malloc_func_t m_func, agfx_free_func_t f_func);
+void* agfx_malloc(size_t size);
+void  agfx_free(void* ptr);
 
 void agfx_draw_pixel(agfx_surface_t* surface, int x, int y, uint32_t color);
 void agfx_draw_line(agfx_surface_t* surface, int x0, int y0, int x1, int y1, int thickness, uint32_t color);

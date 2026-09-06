@@ -4,6 +4,8 @@
 #include "../agfx.h"
 #include "../agfx_filters.h"
 #include "../agfx_mask.h"
+#include "../agfx_text.h"
+#include "../agfx_ui.h"
 
 #define WIDTH 800
 #define HEIGHT 600
@@ -37,6 +39,18 @@ void save_bmp(const char* filename, uint32_t* buffer, int width, int height) {
     fclose(f);
 }
 
+uint8_t* load_file(const char* filename) {
+    FILE* f = fopen(filename, "rb");
+    if (!f) return NULL;
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    uint8_t* buf = (uint8_t*)malloc(size);
+    if (buf) fread(buf, 1, size, f);
+    fclose(f);
+    return buf;
+}
+
 int main() {
     printf("Starting AGFX Showcase...\n1. Basic\n");
 
@@ -45,6 +59,8 @@ int main() {
 
     agfx_surface_t screen;
     agfx_init(&screen, framebuffer, WIDTH, HEIGHT, pitch);
+	
+	agfx_set_allocators(malloc, free);
 
     agfx_fill_rect(&screen, 0, 0, WIDTH, HEIGHT, 0xFF1E1E2E);
 
@@ -119,7 +135,200 @@ int main() {
     free(tmp2);
 
     save_bmp("output_filters.bmp", framebuffer, WIDTH, HEIGHT);
-    printf("Saved to output_filters.bmp\n");
+    printf("Saved to output_filters.bmp\n3. Text Rendering\n");
+    
+    agfx_fill_rect(&screen, 0, 0, WIDTH, HEIGHT, 0xFF1E1E2E);
+
+    uint8_t* font_buffer = load_file("selawk.ttf");
+    if (font_buffer) {
+        agfx_font_t font;
+        if (agfx_font_init(&font, font_buffer, 72.0f)) {
+            
+            int tw, th;
+            uint8_t* text_mask = agfx_mask_generate_string(&font, "AGFX Typography", &tw, &th);
+            
+            if (text_mask) {
+                agfx_fill_alpha_mask(&screen, 50, 50, tw, th, text_mask, 0xFF00FFCC);
+
+                agfx_filter_gradient_mask(&screen, 50, 150, tw, th, text_mask,
+                                          50, 150, 50 + tw, 150,
+                                          0xFFFF512F, 0xFFDD2476);
+
+                agfx_filter_gradient(&screen, 40, 280, 600, 120, 40, 280, 640, 400, 0xFF11998E, 0xFF38EF7D);
+                
+                size_t txt_scratch = agfx_filters_scratch_u32(tw, th);
+                uint32_t* t1 = (uint32_t*)malloc(txt_scratch * 4);
+                uint32_t* t2 = (uint32_t*)malloc(txt_scratch * 4);
+                
+                agfx_filter_acrylic_masked(&screen, 50, 300, tw, th, 
+                                           4,
+                                           0x66000000,
+                                           15,
+                                           12345,
+                                           text_mask, t1, t2);
+                free(t1);
+                free(t2);
+
+                free(text_mask);
+            }
+            agfx_font_destroy(&font);
+        } else {
+            printf("Failed to initialize font!\n");
+        }
+        free(font_buffer);
+    } else {
+        printf("WARNING: Could not load 'selawk.ttf'. Please place a TTF file in the test directory.\n");
+    }
+
+    save_bmp("output_text.bmp", framebuffer, WIDTH, HEIGHT);
+    printf("Saved to output_text.bmp\n4. UI Framework\n");
+    
+    agfx_fill_rect(&screen, 0, 0, WIDTH, HEIGHT, 0xFF111111);
+
+    // Загружаем шрифт
+    uint8_t* font_buf = load_file("selawk.ttf");
+    agfx_font_t ui_font;
+    int font_ok = agfx_font_init(&ui_font, font_buf, 16.0f);
+
+    // -------------------------------------------------------------
+    // [ ОКНО 1: Settings (Основное окно) ]
+    // -------------------------------------------------------------
+    int client1_w = 420, client1_h = 370;
+    uint32_t* shm1 = (uint32_t*)calloc(client1_w * client1_h, 4);
+    agfx_surface_t surf1;
+    agfx_init(&surf1, shm1, client1_w, client1_h, client1_w * 4);
+
+    agfx_ui_context_t ui1;
+    agfx_ui_init(&ui1, &surf1, font_ok ? &ui_font : NULL);
+    
+    // Берем стандартную темную тему Windows 10
+    agfx_ui_theme_t theme = agfx_ui_theme_win10_dark();
+    agfx_ui_set_theme(&ui1, &theme);
+
+    // Заливаем фон клиентского окна цветом из темы
+    agfx_fill_rect(&surf1, 0, 0, client1_w, client1_h, ui1.theme.bg);
+
+    agfx_ui_begin(&ui1, 20, 16);
+
+    agfx_ui_label(&ui1, "System Settings (AOS UI)");
+    agfx_ui_separator(&ui1, 380);
+
+    agfx_ui_button(&ui1, "Apply", 90, 28);
+    agfx_ui_same_line(&ui1);
+    agfx_ui_button(&ui1, "Cancel", 90, 28);
+
+    agfx_ui_separator(&ui1, 380);
+
+    int check1 = 1;
+    agfx_ui_checkbox(&ui1, "Enable Dark Theme", &check1);
+
+    // Тестируем новый виджет: Радио-кнопки (выбор режима питания)
+    agfx_ui_label(&ui1, "Performance Mode:");
+    int power_mode = 1; // 0 = Eco, 1 = Balanced, 2 = High Performance
+    agfx_ui_radio(&ui1, "Eco", &power_mode, 0);
+    agfx_ui_same_line(&ui1);
+    agfx_ui_radio(&ui1, "Balanced", &power_mode, 1);
+    agfx_ui_same_line(&ui1);
+    agfx_ui_radio(&ui1, "Max Performance", &power_mode, 2);
+
+    agfx_ui_label(&ui1, "Computer Name:");
+    agfx_ui_textbox(&ui1, "AOS-Workstation-PC", 260, 26, 1);
+
+    agfx_ui_label(&ui1, "Storage Drive C:");
+    agfx_ui_progress_bar(&ui1, 0.72f, 260, 14);
+
+    // Размеры Окна 1 с учетом рамок
+    int w1_x = 120, w1_y = 70, title_h = 32, border = 1;
+    int tot1_w = client1_w + border * 2;
+    int tot1_h = client1_h + title_h + border * 2;
+
+    // 1. Мягкая тень Окна 1 (в одну строчку!)
+    agfx_ui_draw_shadow(&screen, w1_x, w1_y, tot1_w, tot1_h, 16);
+
+    // 2. Заголовок Окна 1
+    agfx_fill_rect(&screen, w1_x, w1_y, tot1_w, title_h, ui1.theme.bg);
+    if (font_ok) {
+        int tw, th;
+        uint8_t* title_mask = agfx_mask_generate_string(&ui_font, "Settings", &tw, &th);
+        if (title_mask) {
+            agfx_fill_alpha_mask(&screen, w1_x + 12, w1_y + (title_h - th) / 2, tw, th, title_mask, ui1.theme.text);
+            agfx_mask_free(title_mask);
+        }
+    }
+
+    // Кнопка закрытия Окна 1
+    int btn_w = 46;
+    int close_x = w1_x + tot1_w - btn_w - border;
+    agfx_draw_line(&screen, close_x + 18, w1_y + 11, close_x + 28, w1_y + 21, 1, ui1.theme.text_secondary);
+    agfx_draw_line(&screen, close_x + 18, w1_y + 21, close_x + 28, w1_y + 11, 1, ui1.theme.text_secondary);
+
+    // 3. Вставляем буфер программы внутрь рамки
+    agfx_blit(&screen, w1_x + border, w1_y + title_h, client1_w, client1_h, &surf1);
+
+    // 4. Рамка окна
+    agfx_draw_rect(&screen, w1_x, w1_y, tot1_w, tot1_h, border, ui1.theme.border);
+
+    // -------------------------------------------------------------
+    // [ ОКНО 2: Dialog (Стеклянное модальное окно ПОВЕРХ первого) ]
+    // -------------------------------------------------------------
+    int w2_x = 260, w2_y = 170, w2_w = 340, w2_h = 180;
+
+    // 1. Мягкая тень Окна 2 (падает прямо на Окно 1, в 1 строчку!)
+    agfx_ui_draw_shadow(&screen, w2_x, w2_y, w2_w, w2_h, 14);
+
+    // 2. Размываем фон под Окном 2 (прозрачность 50%, без шума)
+    size_t sc2 = agfx_filters_scratch_u32(w2_w, w2_h);
+    uint32_t* tmp_c = (uint32_t*)malloc(sc2 * 4);
+    uint32_t* tmp_d = (uint32_t*)malloc(sc2 * 4);
+    agfx_filter_glass(&screen, w2_x, w2_y, w2_w, w2_h, 8, 0x88202028, tmp_c, tmp_d);
+
+    // 3. Рамка активного Окна 2 (Акцентный синий цвет из темы)
+    agfx_draw_rect(&screen, w2_x, w2_y, w2_w, w2_h, 1, ui1.theme.accent);
+
+    // 4. Заголовок Окна 2
+    if (font_ok) {
+        int tw, th;
+        uint8_t* m = agfx_mask_generate_string(&ui_font, "Save Changes?", &tw, &th);
+        if (m) {
+            agfx_fill_alpha_mask(&screen, w2_x + 16, w2_y + 12, tw, th, m, ui1.theme.text);
+            agfx_mask_free(m);
+        }
+    }
+    agfx_draw_line(&screen, w2_x, w2_y + 36, w2_x + w2_w, w2_y + 36, 1, 0x33FFFFFF);
+
+    // 5. Текст диалога
+    if (font_ok) {
+        int tw, th;
+        uint8_t* m = agfx_mask_generate_string(&ui_font, "Do you want to apply new settings?", &tw, &th);
+        if (m) {
+            agfx_fill_alpha_mask(&screen, w2_x + 16, w2_y + 55, tw, th, m, ui1.theme.text_secondary);
+            agfx_mask_free(m);
+        }
+    }
+
+    // 6. Кнопки диалога (рисуем через AGFX_UI поверх стекла)
+    agfx_ui_context_t ui2;
+    agfx_ui_init(&ui2, &screen, font_ok ? &ui_font : NULL);
+    agfx_ui_set_theme(&ui2, &theme);
+    agfx_ui_begin(&ui2, w2_x + 120, w2_y + 125);
+    agfx_ui_button(&ui2, "Yes", 90, 30);
+    agfx_ui_same_line(&ui2);
+    agfx_ui_button(&ui2, "No", 90, 30);
+
+    // 7. Курсор мыши поверх всего
+    int mx = w2_x + 165, my = w2_y + 140;
+    agfx_fill_triangle(&screen, mx, my, mx, my + 18, mx + 13, my + 13, 0xFFFFFFFF);
+    agfx_draw_triangle(&screen, mx, my, mx, my + 18, mx + 13, my + 13, 1, 0xFF000000);
+
+    free(tmp_c); free(tmp_d);
+    free(shm1);
+    if (font_buf) {
+        free(font_buf);
+        agfx_font_destroy(&ui_font);
+    }
+
+    save_bmp("output_ui.bmp", framebuffer, WIDTH, HEIGHT);
+    printf("Saved to output_ui.bmp\n");
 
     free(framebuffer);
     return 0;

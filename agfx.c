@@ -9,6 +9,22 @@ void agfx_init(agfx_surface_t* surface, uint32_t* buffer, int width, int height,
     agfx_set_clip(surface, 0, 0, width, height);
 }
 
+static agfx_malloc_func_t g_malloc = NULL;
+static agfx_free_func_t   g_free   = NULL;
+
+void agfx_set_allocators(agfx_malloc_func_t m_func, agfx_free_func_t f_func) {
+    g_malloc = m_func;
+    g_free = f_func;
+}
+
+void* agfx_malloc(size_t size) {
+    return g_malloc ? g_malloc(size) : NULL;
+}
+
+void agfx_free(void* ptr) {
+    if (g_free && ptr) g_free(ptr);
+}
+
 void agfx_set_clip(agfx_surface_t* surface, int x, int y, int w, int h) {
     if (!surface) return;
     agfx_surface_t screen_bounds = { .clip_x = 0, .clip_y = 0, .clip_w = surface->width, .clip_h = surface->height };
