@@ -11,7 +11,7 @@ typedef struct {
     int line_gap;
 } agfx_font_t;
 
-int agfx_font_init(agfx_font_t* font, const uint8_t* ttf_buffer, float pixel_height);
+int agfx_font_init(agfx_font_t* font, const uint8_t* ttf_buffer, int pixel_height);
 
 void agfx_font_destroy(agfx_font_t* font);
 void agfx_mask_free(void* mask);

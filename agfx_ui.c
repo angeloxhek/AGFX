@@ -11,6 +11,15 @@ agfx_ui_theme_t agfx_ui_theme_win10_dark(void) {
     t.text            = 0xFFFFFFFF;
     t.text_secondary  = 0xFFAAAAAA;
     t.separator       = 0xFF383838;
+    
+    t.titlebar_active   = 0xFF2B2B2B;
+    t.titlebar_inactive = 0xFF1F1F1F;
+    t.border_active     = 0xFF0078D7;
+    t.border_inactive   = 0xFF444444;
+    t.close_btn_bg_hover= 0xFFE81123;
+    t.close_btn_icon    = 0xFFCCCCCC;
+    t.cursor_fill       = 0xFFFFFFFF;
+    t.cursor_outline    = 0xFF000000;
     return t;
 }
 
@@ -25,14 +34,34 @@ agfx_ui_theme_t agfx_ui_theme_win10_light(void) {
     t.text            = 0xFF000000;
     t.text_secondary  = 0xFF666666;
     t.separator       = 0xFFD0D0D0;
+    
+    t.titlebar_active   = 0xFFFFFFFF;
+    t.titlebar_inactive = 0xFFE6E6E6;
+    t.border_active     = 0xFF0078D7;
+    t.border_inactive   = 0xFFAAAAAA;
+    t.close_btn_bg_hover= 0xFFE81123;
+    t.close_btn_icon    = 0xFF000000;
+    t.cursor_fill       = 0xFF000000;
+    t.cursor_outline    = 0xFFFFFFFF;
     return t;
 }
+
+__attribute__((weak)) int agfx_get_system_theme_hook(agfx_ui_theme_t* out_theme);
 
 void agfx_ui_init(agfx_ui_context_t* ctx, agfx_surface_t* surface, const agfx_font_t* font) {
     if (!ctx) return;
     ctx->surface = surface;
     ctx->font = font;
-    ctx->theme = agfx_ui_theme_win10_dark();
+    int theme_loaded = 0;
+    if (agfx_get_system_theme_hook) {
+        if (agfx_get_system_theme_hook(&ctx->theme) == 0) {
+            theme_loaded = 1;
+        }
+    }
+    
+    if (!theme_loaded) {
+        ctx->theme = agfx_ui_theme_win10_dark();
+    }
     ctx->mouse_x = 0;
     ctx->mouse_y = 0;
     ctx->mouse_down = 0;

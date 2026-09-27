@@ -78,11 +78,13 @@ static float agfx_pow(float x, float y) {
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "stb_truetype.h"
 
-int agfx_font_init(agfx_font_t* font, const uint8_t* ttf_buffer, float pixel_height) {
+int agfx_font_init(agfx_font_t* font, const uint8_t* ttf_buffer, int pixel_height) {
     if (!font || !ttf_buffer) return 0;
 
     font->info = agfx_malloc(sizeof(stbtt_fontinfo));
-    if (!font->info) return 0;
+    if (!font->info) {
+        return 0;
+    }
 
     stbtt_fontinfo* info = (stbtt_fontinfo*)font->info;
 
@@ -92,7 +94,8 @@ int agfx_font_init(agfx_font_t* font, const uint8_t* ttf_buffer, float pixel_hei
         return 0;
     }
 
-    font->scale = stbtt_ScaleForPixelHeight(info, pixel_height);
+    font->scale = stbtt_ScaleForPixelHeight(info, (float)pixel_height);
+
     stbtt_GetFontVMetrics(info, &font->ascent, &font->descent, &font->line_gap);
 
     return 1;
@@ -128,13 +131,17 @@ uint8_t* agfx_mask_generate_string(const agfx_font_t* font, const char* text, in
     }
 
     int total_height = (int)((font->ascent - font->descent) * font->scale);
-    if (total_width <= 0 || total_height <= 0) return NULL;
+    if (total_width <= 0 || total_height <= 0) {
+        return NULL;
+    }
 
-    *out_w = total_width;
+	*out_w = total_width;
     *out_h = total_height;
-
+	
     uint8_t* string_mask = (uint8_t*)agfx_malloc(total_width * total_height);
-    if (!string_mask) return NULL;
+    if (!string_mask) {
+        return NULL;
+    }
     internal_memset(string_mask, 0, total_width * total_height);
 
     int current_x = 0;

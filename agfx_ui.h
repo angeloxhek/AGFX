@@ -18,6 +18,15 @@ typedef struct {
     uint32_t text;
     uint32_t text_secondary;
     uint32_t separator;
+    
+    uint32_t titlebar_active;
+    uint32_t titlebar_inactive;
+    uint32_t border_active;
+    uint32_t border_inactive;
+    uint32_t close_btn_bg_hover;
+    uint32_t close_btn_icon;
+    uint32_t cursor_fill;
+    uint32_t cursor_outline;
 } agfx_ui_theme_t;
 
 agfx_ui_theme_t agfx_ui_theme_win10_dark(void);
