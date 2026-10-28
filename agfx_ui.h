@@ -53,13 +53,21 @@ typedef struct {
     int prev_w;
     int prev_h;
     int row_h;
+
+    int panel_x, panel_y, panel_w, panel_h;
+    int* current_scroll_y;
+    int content_max_y;
+    int old_clip_x, old_clip_y, old_clip_w, old_clip_h;
 } agfx_ui_context_t;
 
 void agfx_ui_init(agfx_ui_context_t* ctx, agfx_surface_t* surface, const agfx_font_t* font);
 void agfx_ui_set_theme(agfx_ui_context_t* ctx, const agfx_ui_theme_t* theme);
 void agfx_ui_set_input(agfx_ui_context_t* ctx, int mx, int my, int m_down, int m_clicked);
 void agfx_ui_begin(agfx_ui_context_t* ctx, int start_x, int start_y);
+void agfx_ui_advance(agfx_ui_context_t* ctx, int w, int h);
 void agfx_ui_same_line(agfx_ui_context_t* ctx);
+void agfx_ui_begin_panel(agfx_ui_context_t* ctx, int x, int y, int w, int h, int* scroll_y);
+void agfx_ui_end_panel(agfx_ui_context_t* ctx);
 
 int  agfx_ui_button_behavior(agfx_ui_context_t* ctx, int w, int h, int* out_x, int* out_y, int* out_state);
 int agfx_ui_slider_behavior(agfx_ui_context_t* ctx, int* val, int min, int max, int w, int h,

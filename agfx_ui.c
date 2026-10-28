@@ -101,7 +101,7 @@ void agfx_ui_begin(agfx_ui_context_t* ctx, int start_x, int start_y) {
     ctx->prev_h = 0;
 }
 
-static void agfx_ui_advance(agfx_ui_context_t* ctx, int w, int h) {
+void agfx_ui_advance(agfx_ui_context_t* ctx, int w, int h) {
     ctx->prev_x = ctx->cursor_x;
     ctx->prev_y = ctx->cursor_y;
     ctx->prev_w = w;
@@ -367,4 +367,71 @@ int agfx_ui_slider_behavior(agfx_ui_context_t* ctx, int* val, int min, int max, 
 
     agfx_ui_advance(ctx, w, h);
     return is_active;
+}
+
+void agfx_ui_begin_panel(agfx_ui_context_t* ctx, int x, int y, int w, int h, int* scroll_y) {
+    if (!ctx || !ctx->surface || !scroll_y) return;
+
+    ctx->old_clip_x = ctx->surface->clip_x;
+    ctx->old_clip_y = ctx->surface->clip_y;
+    ctx->old_clip_w = ctx->surface->clip_w;
+    ctx->old_clip_h = ctx->surface->clip_h;
+
+    agfx_set_clip(ctx->surface, x, y, w, h);
+
+    agfx_fill_rect(ctx->surface, x, y, w, h, ctx->theme.bg);
+
+    ctx->panel_x = x;
+    ctx->panel_y = y;
+    ctx->panel_w = w;
+    ctx->panel_h = h;
+    ctx->current_scroll_y = scroll_y;
+    ctx->content_max_y = y;
+
+    ctx->start_x = x + ctx->spacing;
+    ctx->start_y = y + ctx->spacing - *scroll_y;
+    
+    ctx->cursor_x = ctx->start_x;
+    ctx->cursor_y = ctx->start_y;
+    ctx->row_h = 0;
+}
+
+void agfx_ui_end_panel(agfx_ui_context_t* ctx) {
+    if (!ctx || !ctx->surface || !ctx->current_scroll_y) return;
+	
+    int content_h = ctx->cursor_y - ctx->start_y;
+    
+    agfx_set_clip(ctx->surface, ctx->old_clip_x, ctx->old_clip_y, ctx->old_clip_w, ctx->old_clip_h);
+
+    if (content_h > ctx->panel_h) {
+        int scrollbar_w = 12;
+        int scrollbar_x = ctx->panel_x + ctx->panel_w - scrollbar_w;
+        int scrollbar_y = ctx->panel_y;
+        int scrollbar_h = ctx->panel_h;
+
+        agfx_fill_rect(ctx->surface, scrollbar_x, scrollbar_y, scrollbar_w, scrollbar_h, ctx->theme.control);
+
+        int thumb_h = (ctx->panel_h * ctx->panel_h) / content_h;
+        if (thumb_h < 20) thumb_h = 20;
+
+        int max_scroll = content_h - ctx->panel_h;
+        int thumb_y = scrollbar_y + (*ctx->current_scroll_y * (scrollbar_h - thumb_h)) / max_scroll;
+
+        int is_hover = (ctx->mouse_x >= scrollbar_x && ctx->mouse_x < scrollbar_x + scrollbar_w &&
+                        ctx->mouse_y >= scrollbar_y && ctx->mouse_y < scrollbar_y + scrollbar_h);
+
+        if (is_hover && ctx->mouse_down) {
+            int click_y = ctx->mouse_y - scrollbar_y - (thumb_h / 2);
+            if (click_y < 0) click_y = 0;
+            if (click_y > scrollbar_h - thumb_h) click_y = scrollbar_h - thumb_h;
+            
+            *ctx->current_scroll_y = (click_y * max_scroll) / (scrollbar_h - thumb_h);
+        }
+
+        uint32_t thumb_color = (is_hover && ctx->mouse_down) ? ctx->theme.control_pressed :
+                               (is_hover) ? ctx->theme.control_hover : ctx->theme.border;
+        agfx_fill_rect(ctx->surface, scrollbar_x + 2, thumb_y, scrollbar_w - 4, thumb_h, thumb_color);
+    } else {
+        *ctx->current_scroll_y = 0;
+    }
 }
