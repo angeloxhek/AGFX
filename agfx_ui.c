@@ -135,14 +135,17 @@ int agfx_ui_button(agfx_ui_context_t* ctx, const char* text, int w, int h) {
     agfx_draw_rect(ctx->surface, x, y, w, h, 1, border);
 
     if (ctx->font && text) {
-        int tw, th;
-        uint8_t* mask = agfx_mask_generate_string(ctx->font, text, &tw, &th);
-        if (mask) {
-            int tx = x + (w - tw) / 2;
-            int ty = y + (h - th) / 2;
-            agfx_fill_alpha_mask(ctx->surface, tx, ty, tw, th, mask, ctx->theme.text);
-            agfx_mask_free(mask);
+        int tw = 0;
+        for (int i = 0; text[i]; i++) {
+            unsigned char c = text[i];
+            if (c >= 32 && c <= 127) tw += ctx->font->glyph_cache[c - 32].advance;
         }
+        int th = (int)((ctx->font->ascent - ctx->font->descent) * ctx->font->scale);
+        
+        int tx = x + (w - tw) / 2;
+        int ty = y + (h - th) / 2;
+        
+        agfx_draw_text(ctx->surface, ctx->font, text, tx, ty, ctx->theme.text);
     }
 	
     return clicked;
@@ -171,12 +174,13 @@ int agfx_ui_checkbox(agfx_ui_context_t* ctx, const char* text, int* checked) {
 
     int text_w = 0;
     if (ctx->font && text) {
-        int th;
-        uint8_t* mask = agfx_mask_generate_string(ctx->font, text, &text_w, &th);
-        if (mask) {
-            agfx_fill_alpha_mask(ctx->surface, x + box_size + 8, y + (box_size - th) / 2, text_w, th, mask, ctx->theme.text);
-            agfx_mask_free(mask);
+        for (int i = 0; text[i]; i++) {
+            unsigned char c = text[i];
+            if (c >= 32 && c <= 127) text_w += ctx->font->glyph_cache[c - 32].advance;
         }
+        int th = (int)((ctx->font->ascent - ctx->font->descent) * ctx->font->scale);
+        
+        agfx_draw_text(ctx->surface, ctx->font, text, x + box_size + 8, y + (box_size - th) / 2, ctx->theme.text);
     }
 
     agfx_ui_advance(ctx, box_size + 8 + text_w, box_size);
@@ -206,12 +210,13 @@ int agfx_ui_radio(agfx_ui_context_t* ctx, const char* text, int* selected_val, i
 
     int text_w = 0;
     if (ctx->font && text) {
-        int th;
-        uint8_t* mask = agfx_mask_generate_string(ctx->font, text, &text_w, &th);
-        if (mask) {
-            agfx_fill_alpha_mask(ctx->surface, x + diameter + 8, y + (diameter - th) / 2, text_w, th, mask, ctx->theme.text);
-            agfx_mask_free(mask);
+        for (int i = 0; text[i]; i++) {
+            unsigned char c = text[i];
+            if (c >= 32 && c <= 127) text_w += ctx->font->glyph_cache[c - 32].advance;
         }
+        int th = (int)((ctx->font->ascent - ctx->font->descent) * ctx->font->scale);
+        
+        agfx_draw_text(ctx->surface, ctx->font, text, x + diameter + 8, y + (diameter - th) / 2, ctx->theme.text);
     }
 
     agfx_ui_advance(ctx, diameter + 8 + text_w, diameter);
@@ -277,12 +282,13 @@ void agfx_ui_textbox(agfx_ui_context_t* ctx, const char* text, int w, int h, int
 
     int text_w = 0;
     if (ctx->font && text) {
-        int th;
-        uint8_t* mask = agfx_mask_generate_string(ctx->font, text, &text_w, &th);
-        if (mask) {
-            agfx_fill_alpha_mask(ctx->surface, x + 8, y + (h - th) / 2, text_w, th, mask, ctx->theme.text);
-            agfx_mask_free(mask);
+        for (int i = 0; text[i]; i++) {
+            unsigned char c = text[i];
+            if (c >= 32 && c <= 127) text_w += ctx->font->glyph_cache[c - 32].advance;
         }
+        int th = (int)((ctx->font->ascent - ctx->font->descent) * ctx->font->scale);
+        
+        agfx_draw_text(ctx->surface, ctx->font, text, x + 8, y + (h - th) / 2, ctx->theme.text);
     }
 
     if (is_focused) {
@@ -297,12 +303,14 @@ void agfx_ui_label(agfx_ui_context_t* ctx, const char* text) {
     if (!ctx || !ctx->surface || !text) return;
 
     int tw = 0, th = 16;
-    if (ctx->font) {
-        uint8_t* mask = agfx_mask_generate_string(ctx->font, text, &tw, &th);
-        if (mask) {
-            agfx_fill_alpha_mask(ctx->surface, ctx->cursor_x, ctx->cursor_y, tw, th, mask, ctx->theme.text);
-            agfx_mask_free(mask);
+    if (ctx->font && text) {
+        for (int i = 0; text[i]; i++) {
+            unsigned char c = text[i];
+            if (c >= 32 && c <= 127) tw += ctx->font->glyph_cache[c - 32].advance;
         }
+        th = (int)((ctx->font->ascent - ctx->font->descent) * ctx->font->scale);
+        
+        agfx_draw_text(ctx->surface, ctx->font, text, ctx->cursor_x, ctx->cursor_y, ctx->theme.text);
     }
     agfx_ui_advance(ctx, tw, th);
 }

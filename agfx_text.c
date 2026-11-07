@@ -82,9 +82,7 @@ int agfx_font_init(agfx_font_t* font, const uint8_t* ttf_buffer, int pixel_heigh
     if (!font || !ttf_buffer) return 0;
 
     font->info = agfx_malloc(sizeof(stbtt_fontinfo));
-    if (!font->info) {
-        return 0;
-    }
+    if (!font->info) return 0;
 
     stbtt_fontinfo* info = (stbtt_fontinfo*)font->info;
 
@@ -95,16 +93,37 @@ int agfx_font_init(agfx_font_t* font, const uint8_t* ttf_buffer, int pixel_heigh
     }
 
     font->scale = stbtt_ScaleForPixelHeight(info, (float)pixel_height);
-
     stbtt_GetFontVMetrics(info, &font->ascent, &font->descent, &font->line_gap);
+
+    for (int i = 0; i < 96; i++) {
+        int codepoint = i + 32;
+        agfx_glyph_t* glyph = &font->glyph_cache[i];
+        
+        int lsb;
+        stbtt_GetCodepointHMetrics(info, codepoint, &glyph->advance, &lsb);
+        glyph->advance = (int)(glyph->advance * font->scale);
+        
+        glyph->bitmap = stbtt_GetCodepointBitmap(info, 0, font->scale, codepoint, 
+                                                 &glyph->w, &glyph->h, 
+                                                 &glyph->xoff, &glyph->yoff);
+    }
 
     return 1;
 }
 
 void agfx_font_destroy(agfx_font_t* font) {
-    if (font && font->info) {
-        agfx_free(font->info);
-        font->info = NULL;
+    if (font) {
+        for (int i = 0; i < 96; i++) {
+            if (font->glyph_cache[i].bitmap) {
+                agfx_free(font->glyph_cache[i].bitmap);
+                font->glyph_cache[i].bitmap = NULL;
+            }
+        }
+        
+        if (font->info) {
+            agfx_free(font->info);
+            font->info = NULL;
+        }
     }
 }
 
@@ -119,13 +138,16 @@ uint8_t* agfx_mask_generate_string(const agfx_font_t* font, const char* text, in
 
     int total_width = 0;
     int i = 0;
+    
     while (text[i]) {
-        int advance, lsb;
-        stbtt_GetCodepointHMetrics(info, text[i], &advance, &lsb);
-        total_width += (int)(advance * font->scale);
+        unsigned char c = text[i];
+        if (c < 32 || c > 127) c = 32;
+        
+        const agfx_glyph_t* glyph = &font->glyph_cache[c - 32];
+        total_width += glyph->advance;
         
         if (text[i+1]) {
-            total_width += (int)(stbtt_GetCodepointKernAdvance(info, text[i], text[i+1]) * font->scale);
+            total_width += (int)(stbtt_GetCodepointKernAdvance(info, c, text[i+1]) * font->scale);
         }
         i++;
     }
@@ -135,9 +157,9 @@ uint8_t* agfx_mask_generate_string(const agfx_font_t* font, const char* text, in
         return NULL;
     }
 
-	*out_w = total_width;
+    *out_w = total_width;
     *out_h = total_height;
-	
+    
     uint8_t* string_mask = (uint8_t*)agfx_malloc(total_width * total_height);
     if (!string_mask) {
         return NULL;
@@ -149,20 +171,22 @@ uint8_t* agfx_mask_generate_string(const agfx_font_t* font, const char* text, in
 
     i = 0;
     while (text[i]) {
-        int w, h, xoff, yoff;
-        uint8_t* char_bitmap = stbtt_GetCodepointBitmap(info, 0, font->scale, text[i], &w, &h, &xoff, &yoff);
+        unsigned char c = text[i];
+        if (c < 32 || c > 127) c = 32;
+        
+        const agfx_glyph_t* glyph = &font->glyph_cache[c - 32];
 
-        if (char_bitmap) {
-            int draw_y = baseline + yoff;
-            int draw_x = current_x + xoff;
+        if (glyph->bitmap) {
+            int draw_y = baseline + glyph->yoff;
+            int draw_x = current_x + glyph->xoff;
 
-            for (int cy = 0; cy < h; cy++) {
-                for (int cx = 0; cx < w; cx++) {
+            for (int cy = 0; cy < glyph->h; cy++) {
+                for (int cx = 0; cx < glyph->w; cx++) {
                     if (draw_y + cy >= 0 && draw_y + cy < total_height &&
                         draw_x + cx >= 0 && draw_x + cx < total_width) {
                         
                         int mask_idx = (draw_y + cy) * total_width + (draw_x + cx);
-                        uint8_t src_val = char_bitmap[cy * w + cx];
+                        uint8_t src_val = glyph->bitmap[cy * glyph->w + cx];
                         
                         if (src_val > string_mask[mask_idx]) {
                             string_mask[mask_idx] = src_val;
@@ -170,17 +194,75 @@ uint8_t* agfx_mask_generate_string(const agfx_font_t* font, const char* text, in
                     }
                 }
             }
-            agfx_free(char_bitmap);
         }
 
-        int advance, lsb;
-        stbtt_GetCodepointHMetrics(info, text[i], &advance, &lsb);
-        current_x += (int)(advance * font->scale);
+        current_x += glyph->advance;
         if (text[i+1]) {
-            current_x += (int)(stbtt_GetCodepointKernAdvance(info, text[i], text[i+1]) * font->scale);
+            current_x += (int)(stbtt_GetCodepointKernAdvance(info, c, text[i+1]) * font->scale);
         }
         i++;
     }
 
     return string_mask;
+}
+
+void agfx_draw_text(agfx_surface_t* surface, const agfx_font_t* font, const char* text, int x, int y, uint32_t color) {
+    if (!surface || !surface->buffer || !font || !text) return;
+
+    int current_x = x;
+    int baseline = y + (int)(font->ascent * font->scale);
+
+    uint32_t text_rgb = color & 0x00FFFFFF;
+    uint32_t text_a = (color >> 24) & 0xFF; 
+    if (text_a == 0) return;
+
+    int pitch_pixels = surface->pitch / 4;
+
+    while (*text) {
+        unsigned char c = *text;
+        
+        if (c < 32 || c > 127) {
+            c = 32;
+        }
+        
+        const agfx_glyph_t* glyph = &font->glyph_cache[c - 32];
+
+        if (glyph->bitmap) {
+            int draw_x = current_x + glyph->xoff;
+            int draw_y = baseline + glyph->yoff;
+
+            for (int cy = 0; cy < glyph->h; cy++) {
+                int screen_y = draw_y + cy;
+                if (screen_y < surface->clip_y || screen_y >= surface->clip_y + surface->clip_h) continue;
+
+                uint32_t* row = surface->buffer + (screen_y * pitch_pixels);
+                uint8_t* mask_row = glyph->bitmap + (cy * glyph->w);
+
+                for (int cx = 0; cx < glyph->w; cx++) {
+                    int screen_x = draw_x + cx;
+                    if (screen_x < surface->clip_x || screen_x >= surface->clip_x + surface->clip_w) continue;
+
+                    uint32_t mask_val = mask_row[cx];
+                    if (mask_val == 0) continue;
+
+                    uint32_t final_alpha = (mask_val * text_a) >> 8;
+                    
+                    if (final_alpha == 255) {
+                        row[screen_x] = text_rgb | 0xFF000000;
+                    } else {
+                        uint32_t src_color = text_rgb | (final_alpha << 24);
+                        row[screen_x] = agfx_blend(row[screen_x], src_color);
+                    }
+                }
+            }
+        }
+
+        current_x += glyph->advance;
+        
+        if (*(text + 1)) {
+            current_x += (int)(stbtt_GetCodepointKernAdvance((stbtt_fontinfo*)font->info, c, *(text + 1)) * font->scale);
+        }
+        
+        text++;
+    }
 }

@@ -53,13 +53,14 @@ static inline uint32_t agfx_blend(uint32_t bg_color, uint32_t fg_color) {
     uint8_t alpha = (fg_color >> 24) & 0xFF;
     if (alpha == 255) return fg_color;
     if (alpha == 0) return bg_color;
-    uint8_t inv_alpha = 255 - alpha;
-    uint8_t r_bg = (bg_color >> 16) & 0xFF, g_bg = (bg_color >> 8) & 0xFF, b_bg = bg_color & 0xFF;
-    uint8_t r_fg = (fg_color >> 16) & 0xFF, g_fg = (fg_color >> 8) & 0xFF, b_fg = fg_color & 0xFF;
-    uint8_t r = (r_fg * alpha + r_bg * inv_alpha) / 255;
-    uint8_t g = (g_fg * alpha + g_bg * inv_alpha) / 255;
-    uint8_t b = (b_fg * alpha + b_bg * inv_alpha) / 255;
-    return (0xFF << 24) | (r << 16) | (g << 8) | b;
+    uint32_t inv_alpha = 255 - alpha;
+    uint32_t bg_rb = bg_color & 0x00FF00FF;
+    uint32_t fg_rb = fg_color & 0x00FF00FF;
+    uint32_t out_rb = ((fg_rb * alpha + bg_rb * inv_alpha) >> 8) & 0x00FF00FF;
+    uint32_t bg_g = bg_color & 0x0000FF00;
+    uint32_t fg_g = fg_color & 0x0000FF00;
+    uint32_t out_g = ((fg_g * alpha + bg_g * inv_alpha) >> 8) & 0x0000FF00;
+    return (0xFF << 24) | out_rb | out_g;
 }
 
 static inline int agfx_clip_rect(const agfx_surface_t* s, int* x, int* y, int* w, int* h) {

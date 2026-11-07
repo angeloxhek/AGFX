@@ -151,21 +151,28 @@ void agfx_fill_alpha_mask(agfx_surface_t* surface, int x, int y, int w, int h, c
     int orig_x = x, orig_y = y;
     if (!agfx_clip_rect(surface, &x, &y, &w, &h)) return;
 
-    uint8_t text_r = (color >> 16) & 0xFF, text_g = (color >> 8) & 0xFF, text_b = color & 0xFF, text_a = (color >> 24) & 0xFF; 
+    uint32_t text_rgb = color & 0x00FFFFFF;
+    uint32_t text_a = (color >> 24) & 0xFF; 
     int pitch_pixels = surface->pitch / 4;
 
     for (int cy = 0; cy < h; cy++) {
         uint32_t* row = surface->buffer + ((y + cy) * pitch_pixels);
         int mask_y = (y + cy) - orig_y;
+        const uint8_t* mask_row = mask + (mask_y * w);
         
         for (int cx = 0; cx < w; cx++) {
             int mask_x = (x + cx) - orig_x;
-            uint8_t mask_val = mask[mask_y * w + mask_x];
+            uint32_t mask_val = mask_row[mask_x];
             if (mask_val == 0) continue;
 
-            uint8_t final_alpha = (mask_val * text_a) / 255;
-            uint32_t src_color = (final_alpha << 24) | (text_r << 16) | (text_g << 8) | text_b;
-            row[x + cx] = agfx_blend(row[x + cx], src_color);
+            uint32_t final_alpha = (mask_val * text_a) >> 8; 
+            
+            if (final_alpha == 255) {
+                row[x + cx] = text_rgb | 0xFF000000;
+            } else {
+                uint32_t src_color = text_rgb | (final_alpha << 24);
+                row[x + cx] = agfx_blend(row[x + cx], src_color);
+            }
         }
     }
 }
