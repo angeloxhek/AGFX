@@ -58,6 +58,15 @@ typedef struct {
     int* current_scroll_y;
     int content_max_y;
     int old_clip_x, old_clip_y, old_clip_w, old_clip_h;
+
+    int current_item_id;
+    int hot_item;
+    int active_item;
+    
+    int last_hot_item;
+    int last_active_item;
+    
+    int force_redraw;
 } agfx_ui_context_t;
 
 void agfx_ui_init(agfx_ui_context_t* ctx, agfx_surface_t* surface, const agfx_font_t* font);

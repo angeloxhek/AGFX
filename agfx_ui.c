@@ -76,6 +76,12 @@ void agfx_ui_init(agfx_ui_context_t* ctx, agfx_surface_t* surface, const agfx_fo
     ctx->prev_w = 0;
     ctx->prev_h = 0;
     ctx->row_h = 0;
+	ctx->current_item_id = 0;
+    ctx->hot_item = 0;
+    ctx->active_item = 0;
+    ctx->last_hot_item = 0;
+    ctx->last_active_item = 0;
+    ctx->force_redraw = 1;
 }
 
 void agfx_ui_set_theme(agfx_ui_context_t* ctx, const agfx_ui_theme_t* theme) {
@@ -99,6 +105,7 @@ void agfx_ui_begin(agfx_ui_context_t* ctx, int start_x, int start_y) {
     ctx->row_h = 0;
     ctx->prev_w = 0;
     ctx->prev_h = 0;
+	ctx->current_item_id = 1; 
 }
 
 void agfx_ui_advance(agfx_ui_context_t* ctx, int w, int h) {
@@ -332,20 +339,30 @@ void agfx_ui_draw_shadow(agfx_surface_t* s, int x, int y, int w, int h, int size
 int agfx_ui_button_behavior(agfx_ui_context_t* ctx, int w, int h, int* out_x, int* out_y, int* out_state) {
     if (!ctx) return 0;
 
+    int id = ctx->current_item_id++;
     int x = ctx->cursor_x;
     int y = ctx->cursor_y;
 
     int is_hover = (ctx->mouse_x >= x && ctx->mouse_x < x + w &&
                     ctx->mouse_y >= y && ctx->mouse_y < y + h);
-    int is_pressed = is_hover && ctx->mouse_down;
-    int is_clicked = is_hover && ctx->mouse_clicked;
+    
+    if (is_hover) {
+        ctx->hot_item = id;
+    }
+
+    if (is_hover && ctx->mouse_down) {
+        ctx->active_item = id;
+    }
+
+    int is_pressed = (ctx->active_item == id);
+    int is_clicked = (is_hover && ctx->mouse_clicked);
+
+    int new_state = is_pressed ? AGFX_UI_STATE_PRESSED :
+                   (is_hover   ? AGFX_UI_STATE_HOVER   : AGFX_UI_STATE_NORMAL);
 
     if (out_x) *out_x = x;
     if (out_y) *out_y = y;
-    if (out_state) {
-        *out_state = is_pressed ? AGFX_UI_STATE_PRESSED :
-                    (is_hover   ? AGFX_UI_STATE_HOVER   : AGFX_UI_STATE_NORMAL);
-    }
+    if (out_state) *out_state = new_state;
 
     agfx_ui_advance(ctx, w, h);
     return is_clicked;
